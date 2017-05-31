@@ -1,0 +1,147 @@
+#!/bin/sh
+########################
+# VARIABLES
+#######################
+COLOR_RED='\033[0;31m'
+NO_COLOR='\033[0m'
+
+#KODI DU SALON
+salon_user="xbmc"
+salon_password="ddsqsds"
+salon_ip="192.168.1.150"
+salon_port="8080"
+
+#KODI DE LA CHAMBRE
+chambre_user="kodi"
+chambre_password="usgdqsd"
+chambre_ip="192.168.1.178"
+chambre_port="8080"
+
+tmp_file="/tmp/kodi_tmp_result"
+res_file="/tmp/kodi_result"
+
+########################
+# UTIL FUNCTIONS
+########################
+help() {
+  echo "Usage: ${0} --kodi=chambre --cmd=whats_playing"
+  echo -e "Send JSONRPC command to KODI.
+
+  -h, --help        this screen
+  -k, --kodi        selected kodi entity
+  -c, --cmd         command to execute
+  -l, --cmdlist     list all available commands"
+
+  exit
+}
+
+cmdlist() {
+  echo "Available commands:
+
+  tvshows_list         List all availabe tv shows
+  whats_playing        Display what is currently playing
+  shutdown	       Shutdown the system"
+  exit
+}
+#########################
+# LIST OF JSON COMMANDS
+#########################
+
+cmd_tvshows_list="{\"jsonrpc\": \"2.0\", \"method\": \"VideoLibrary.GetTVShows\", \"params\": { \"filter\": {\"field\": \"playcount\", \"operator\": \"is\", \"value\": \"0\"}, \"limits\": { \"start\" : 0, \"end\": 75 }, \"properties\": [\"art\", \"genre\", \"plot\", \"title\", \"originaltitle\", \"year\", \"rating\", \"thumbnail\", \"playcount\", \"file\", \"fanart\"], \"sort\": { \"order\": \"ascending\", \"method\": \"label\" } }, \"id\": \"libTvShows\"}"
+cmd_whats_playing="{\"jsonrpc\": \"2.0\", \"method\": \"Player.GetActivePlayers\", \"id\": 1}"
+cmd_shutdown="{\"jsonrpc\": \"2.0\", \"method\": \"System.Shutdown\"}"
+
+########################
+# GET ARGUMENTS
+########################
+for i in "$@"
+do
+case $i in
+    -k=*|--kodi=*)
+    KODI="${i#*=}"
+    shift # past argument=value
+    ;;
+    -c=*|--cmd=*)
+    CMD="${i#*=}"
+    shift # past argument=value
+    ;;
+    -l|--cmdlist)
+    cmdlist
+    shift
+    ;;
+    -h|--help)
+    help
+    shift
+    ;;
+    *)
+    echo -e "${COLOR_RED}Illegal argument${NO_COLOR}"
+    help        # unknown option
+    shift
+    ;;
+esac
+done
+
+#if no kodi instance or no cmd given
+if [ -z "$KODI" ]; then
+    echo -e "${COLOR_RED}Error: No argument --kodi given${NO_COLOR}"
+    help
+fi
+if [ -z "$CMD" ]; then
+    echo -e "${COLOR_RED}Error: No argument --cmd given${NO_COLOR}"
+    help
+fi
+
+#delete old files
+rm ${tmp_file}
+rm ${res_file}
+
+#Choose right kodi instance
+#url_base="http://${ip}:${port}/jsonrpc?request="
+case "${KODI}" in
+"salon")
+    url_base="http://${salon_ip}:${salon_port}/jsonrpc?request="
+    user="${salon_user}"
+    password="${salon_password}"
+    ;;
+"chambre")
+    url_base="http://${chambre_ip}:${chambre_port}/jsonrpc?request="
+    user="${chambre_user}"
+    password="${chambre_password}"
+    ;;
+*)
+    echo -e "${COLOR_RED}Error: Kodi instance \"${KODI}\" dont exists ${NO_COLOR}"
+    help
+    ;;
+esac
+
+#get cmd to execute
+case "${CMD}" in
+"whats_playing")
+    cmd="${cmd_whats_playing}"
+    ;;
+"tvshows_list")
+    cmd="${cmd_tvshows_list}"
+    ;;
+"shutdown")
+    cmd="${cmd_shutdown}"
+    ;;
+*)
+    echo -e "${COLOR_RED}Error: Command \"${CMD}\" dont exists ${NO_COLOR}"
+    cmdlist
+    ;;
+esac
+
+########################
+# CONTACTING KODI
+########################
+echo -e "${COLOR_RED}Executing RPC ${url_base}${cmd}...${NO_COLOR}"
+wget --user=${user} --password=${password} -O ${tmp_file} "${url_base}${cmd}"
+
+#Pretty print JSON
+python -m json.tool ${tmp_file} > ${res_file}
+
+#Display result on stdout
+echo -e "${COLOR_RED}Result of command \"${CMD}\" on KODI instance \"${KODI}\":${NO_COLOR}"
+cat ${res_file}
+
+echo -e "\n##################################################\nJSON file saved in ${COLOR_RED}${res_file}${NO_COLOR}"
